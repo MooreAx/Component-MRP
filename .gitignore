@@ -1,0 +1,22 @@
+# R hidden files
+.Rdata
+.Rhistory
+.Rproj*
+*.Rproj
+
+
+# python
+.venv/
+
+#archive
+archive/
+
+#inputs not req'd
+data/
+
+# draw.io
+*.drawio
+
+#csvs and Excel
+*.csv
+*.xlsx
