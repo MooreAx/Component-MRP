@@ -1,6 +1,7 @@
-# build inputs for automated HPS file (mainly for reading into python)
-
-rm(list = ls())
+# build inputs for HPS file replacement
+# Note: The HPS is being retired effective Jan 19, 2026. Supply plan estimates
+# will be based off of anticipated shortages from the forecast netter. Supply
+# will be built to cover shortages expected in the following month
 
 # load libraries
 library(tidyverse)
@@ -8,50 +9,71 @@ library(janitor)
 library(readxl)
 library(lubridate)
 
-#read inventory data
-folder <- "C:/Users/alex.moore/OneDrive - Canopy Growth Corporation/Documents/Working Folder/Inventory/OHWSI"
+#read production plan
+production_plan <- read_csv(
+  paste(
+    "C:/Users/alex.moore/OneDrive - Canopy Growth Corporation/Documents/Working Folder/supply_model",
+    "Production Plan.csv",
+    sep = "/"
+  )
+)
 
-latest_file <- list.files(folder, pattern = "\\.xlsx$", full.names = TRUE) %>%
-  tibble(file = .) %>%
-  mutate(
-    # extract the first YYYY-MM-DD in the filename
-    file_date = str_extract(basename(file), "\\d{4}-\\d{2}-\\d{2}") %>% ymd()
-  ) %>%
-  filter(!is.na(file_date)) %>%
-  arrange(desc(file_date)) %>%
-  slice(1) %>%
-  pull(file)
+pp_horizon <- max(production_plan$date)
+  
+#read shorts from allocator
+shorts <- read_csv(
+  paste(
+    "C:/Users/alex.moore/OneDrive - Canopy Growth Corporation/Documents/Working Folder/forecast_netter/outputs",
+    "shortlog.csv",
+    sep = "/"
+  )
+)
 
-# read the latest file, process
-inv <- read_excel(latest_file, skip = 1, col_types = "text") %>%
-  clean_names() %>%
-  filter(qa_status %in% c("A", "eComm-A", "AWP", "QWP", "QAP")) %>%
-  rename(part = name) %>%
+shorts_by_month <- shorts %>%
+  filter(date > pp_horizon) %>%
   mutate(
-    available = parse_number(available),
-    thc_percent_31 = parse_number(thc_percent_31),
-    label_thc = ifelse(str_detect(label_thc, "[^0-9.+-]"), NA, label_thc),
-    label_thc = parse_number(label_thc),
-    manufactured = parse_number(manufactured),
-    manufactured = as.Date(manufactured, origin = "1899-12-30"),
-    pack_date = parse_number(pack_date),
-    pack_date = as.Date(manufactured, origin = "1899-12-30"),
+    month = floor_date(date, unit = "month")
   ) %>%
-  rename(
-    thc_pc = thc_percent_31,
-    manufactured_date = manufactured,
-    lot_number = number
-  ) %>%
-  select(part, site, lot_number, pool, qa_status, available, warehouse, thc, label_thc, manufactured_date, pack_date) %>%
-  group_by(part, site, lot_number, pool, qa_status, warehouse, thc, label_thc, manufactured_date, pack_date) %>%
+  group_by(part, month) %>%
   summarise(
-    available = sum(available),
+    short = sum(short),
     .groups = "drop"
   ) %>%
-  filter(
-    #only allow 10dddd(xx)?, 20dddd(xx)? and PGddddd(xx)?
-    str_detect(part, "^(?:(?:10|20)\\d{4}(?:[a-zA-Z]{2})?|PG\\d{5}(?:[a-zA-Z]{2})?)$"),
-    !(lot_number %in% c("RETURN", "RESALE")),
-    available > 0
+  mutate(
+    build_date = month - months(1),
+    build_date = pmax(build_date, pp_horizon + weeks(1))
   )
+
+#assemble into supply plan
+supply_no_hps <- bind_rows(
+  production_plan %>%
+    filter(prod_class == "FG") %>%
+    select(
+      uid = item,
+      date = SOW,
+      supply = quantity
+    ) %>%
+    mutate(
+      type = "supply plan"
+    ),
+  shorts_by_month %>%
+    select(
+      uid = part,
+      date = build_date,
+      supply = short
+    ) %>%
+    mutate(
+      type = "estimated short"
+    )
+)
+
+supply <- supply_no_hps %>%
+  group_by(uid, date) %>%
+  summarise(
+    supply = sum(supply),
+    .groups = "drop"
+  )
+
+
+
 

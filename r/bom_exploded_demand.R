@@ -4,13 +4,13 @@
 
 subcomponent_leadtime <- 0 #weeks
 
-start_date = min(supply_plan$date)
+start_date = min(supply$date)
 
 
 # ___ BOM explosion ___
 
 sub_component_demand <- supply %>%
-  select(-description) %>%
+  #select(-description) %>%
   left_join(
     exploded_bom %>%
       select(-c(demand_window_first_date, demand_window_last_date,
@@ -41,8 +41,21 @@ sub_component_demand <- supply %>%
   )
 
 
-#this is dangerous -- missing weeks are not checked. add expand(date) step here.
+all_weeks <- seq.Date(
+  from = start_date,
+  to = start_date + weeks(52),
+  by = "week"
+)
+
+sentinel <- tibble(
+  top_level_assembly = "__sentinel__",
+  date = all_weeks,
+  exploded_qty = 0
+)
+
+#missing weeks are expanded via the sentinel row binding
 scd_wide <- sub_component_demand %>%
+  bind_rows(sentinel) %>%
   filter(date >= start_date) %>%
   arrange(date) %>%
   pivot_wider(
@@ -52,12 +65,12 @@ scd_wide <- sub_component_demand %>%
   ) %>%
   group_by(top_level_assembly) %>%
   arrange(top_level_assembly, bom_line) %>%
-  ungroup()
+  ungroup() %>%
+  filter(top_level_assembly != "__sentinel__")
 
 #write to csv
 sub_component_demand %>% write_csv("scd_long.csv")
 scd_wide %>% write_csv("scd_wide.csv")
-
 
 #read inventory data
 folder <- "C:/Users/alex.moore/OneDrive - Canopy Growth Corporation/Documents/Working Folder/Inventory/OHWSI"
@@ -73,15 +86,17 @@ latest_file <- list.files(folder, pattern = "\\.xlsx$", full.names = TRUE) %>%
   slice(1) %>%
   pull(file)
 
+
+
 # read the latest file
 inv <- read_excel(latest_file, skip = 1, col_types = "text") %>%
   clean_names() %>%
   filter(qa_status %in% c("A", "eComm-A", "AWP", "QWP", "QAP")) %>%
   rename(part = name) %>%
-  mutate(available = parse_number(available)) %>%
+  mutate(available = parse_number(quantity)) %>% #using quantity, which is lot number
   group_by(part) %>%
   summarise(
-    available = sum(available)
+    available = sum(available) 
   )
     
 
