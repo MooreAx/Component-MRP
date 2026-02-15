@@ -20,3 +20,4 @@ data/
 #csvs and Excel
 *.csv
 *.xlsx
+.Rproj.user
