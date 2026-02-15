@@ -152,17 +152,18 @@ sage_bom <- bind_rows(
   )
 ) %>%
   #assign sequence:
-  group_by(top_level_assembly, level) %>%
-  mutate(
-    sequence = row_number()
-    ) %>%
   group_by(top_level_assembly) %>%
   arrange(sort_path, .by_group = TRUE) %>%
   mutate(
     indented_part = str_c(str_dup("  . ", level), part),
     bom_line = row_number()
     ) %>%
+  group_by(top_level_assembly, level) %>%
+  mutate(
+    sequence = row_number()
+    ) %>%
   ungroup() %>%
   relocate(indented_part, .before = part)
-  
 
+  
+sage_bom %>% write_csv("zbom_heirarchy.csv")
