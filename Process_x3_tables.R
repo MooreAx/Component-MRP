@@ -93,6 +93,11 @@ x3BOM_clean <- x3BOM %>%
   
   mutate(
     bom_code = parse_number(bom_code),
+    bom_code_dtl = case_when(
+      bom_code == 1 ~ "Default",
+      bom_code == 2 ~ "Labelling",
+      bom_code == 75 ~ "Subcontracting"
+    ),
     
     use_status = parse_number(use_status),
     use_status_dtl = case_when(
