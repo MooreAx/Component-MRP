@@ -6,16 +6,17 @@ ITMM <- x3ITMMASTER_clean
 
 BOMH <- x3BOM_clean %>%
   filter(
-    bom_code == 1, #manufacturing
+    bom_code == 1, #manufacturing (default)
     bom_type == 2, #manufacturing
   ) 
 
-BOMD <- x3BOMD_clean %>%
+BOMH_labels <- x3BOM_clean %>%
   filter(
-    bom_code == 1, #manufacturing
-    bom_type == 2, #manufacturing
-    bom_qty > 0
-  ) %>%
+    bom_code == 2, #labelling
+    bom_type == 2
+  )
+
+BOMD_temp <- x3BOMD_clean %>%
   #add base quantity
   left_join(
     BOMH %>% 
@@ -64,9 +65,19 @@ BOMD <- x3BOMD_clean %>%
     routing_operation
   )
 
+BOMD <- BOMD_temp %>%
+filter(
+  bom_code == 1, #manufacturing (default)
+  bom_type == 2, #manufacturing
+  stock_link_qty > 0
+)
 
-## have got to here ##
-
+BOMD_labels <- BOMD_temp %>%
+  filter(
+    bom_code == 2, #labelling
+    bom_type == 2,
+    stock_link_qty > 0
+  )
 
 
 #BOMD IS A "DIRECTIONAL GRAPH"
@@ -81,8 +92,15 @@ dup_edges <- BOMD %>%
     join_by(parent, component, routing_operation)
   )
 
+dup_edges_labels <- BOMD_labels %>%
+  count(parent, component, routing_operation) %>%
+  filter(n > 1) %>%
+  left_join(
+    BOMD,
+    join_by(parent, component, routing_operation)
+  )
 
-# -------------- PICK UP HERE - sunday feb 1.
+
 
 #identify "edges" (i.e. parent / child relationships)
 edges <- BOMD %>%
@@ -96,10 +114,26 @@ edges <- BOMD %>%
     .after = stock_link_qty
   )
 
+edges_labels <- BOMD_labels %>%
+  # Normalized qty: how much of component (in its STU) is needed per 1 unit of parent (in parent's STU)
+  rename(part = component) %>%
+  mutate(
+    quantity = case_when(
+      link_qty_code == 1 ~ stock_link_qty / parent_base_qty, #proportional
+      link_qty_code == 2 ~ stock_link_qty, #fixed
+    ),
+    .after = stock_link_qty
+  )
 
 
 #identify "roots" (i.e. top level assemblies)
 roots <- BOMD %>%
+  filter(str_detect(parent, "^(?:10\\d{4}|20\\d{4})(?:-UL)?$")) %>%
+  #filter(!(parent %in% component)) %>%
+  distinct(parent) %>%
+  rename(top_level_assembly = parent)
+
+roots_labels <- BOMD_labels %>%
   filter(str_detect(parent, "^(?:10\\d{4}|20\\d{4})(?:-UL)?$")) %>%
   #filter(!(parent %in% component)) %>%
   distinct(parent) %>%
@@ -170,6 +204,21 @@ seed <- roots %>%
     scrap_factor_percent = NA,
   )
 
+#set up the starting data frame
+seed_labels <- roots_labels %>%
+  transmute(
+    top_level_assembly,
+    parent = NA,
+    part = top_level_assembly,
+    level = 0,
+    sort_path = top_level_assembly,
+    quantity = 1,
+    link_qty_code = NA,
+    extended_quantity = 1,
+    scrap_factor_percent = NA,
+  )
+
+
 #apply the recursive function
 sagex3_bom <- bind_rows(
   seed,
@@ -193,9 +242,7 @@ sagex3_bom <- bind_rows(
   ungroup() %>%
   relocate(indented_part, .before = part) %>%
 
-
   #pull in descriptions and uoms, etc.
-  
   left_join(
     x3ITMMASTER_clean %>%
       select(
@@ -214,6 +261,51 @@ sagex3_bom <- bind_rows(
     )
   )
   
+
+#repeat for labels
+sagex3_bom_labels <- bind_rows(
+  seed_labels,
+  build_bom(
+    frontier = seed_labels,
+    edges = edges_labels,
+    max_level = 20
+  )
+) %>%
+  #assign sequence:
+  group_by(top_level_assembly) %>%
+  arrange(sort_path, .by_group = TRUE) %>%
+  mutate(
+    indented_part = str_c(str_dup("  . ", level), part),
+    bom_line = row_number()
+  ) %>%
+  group_by(top_level_assembly, level) %>%
+  mutate(
+    sequence = row_number()
+  ) %>%
+  ungroup() %>%
+  relocate(indented_part, .before = part) %>%
+  
+  #pull in descriptions and uoms, etc.
+  left_join(
+    x3ITMMASTER_clean %>%
+      select(
+        part,
+        description1,
+        stock_unit,
+        status = product_status_dtl
+      ),
+    join_by(part),
+    relationship = "many-to-one"
+  ) %>%
+  mutate(
+    link_type = case_when(
+      link_qty_code == 1 ~ "Proportional",
+      link_qty_code == 2 ~ "Fixed",
+    )
+  )
+
+
+
 #clean bom for exporting
 
 final_sagex3_bom <- sagex3_bom %>%
@@ -222,7 +314,14 @@ final_sagex3_bom <- sagex3_bom %>%
     link_quantity = quantity, link_type, scrap_factor_percent, extended_quantity, stock_unit, status
   )
 
+final_sagex3_bom_labels <- sagex3_bom_labels %>%
+  select(
+    top_level_assembly, bom_line, level, part, indented_part, description1,
+    link_quantity = quantity, link_type, scrap_factor_percent, extended_quantity, stock_unit, status
+  )
+
 final_sagex3_bom %>% write_csv("sagebom_heirarchy.csv")
+final_sagex3_bom_labels %>% write_csv("sagebom_heirarchy_labels.csv")
 
 #ok sweet. now filter just for items in the latest PP.
 
@@ -233,12 +332,15 @@ pp_items <- production_plan %>% filter(
   distinct() %>%
   pull(item)
 
-
 #send these to production planners
 current_boms_for_checking <- final_sagex3_bom %>%
   filter(top_level_assembly %in% pp_items)
 
-current_boms_for_checking %>% write_csv("2026-02-14 sage_boms_with_qtys.csv")
+current_boms_for_checking %>% write_csv("2026-03-04 sage_boms_with_qtys.csv")
+
+
+
+
 
 
 
