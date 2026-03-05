@@ -19,7 +19,8 @@ production_plan <- read_csv(
 )
 
 pp_horizon <- max(production_plan$date)
-  
+pp_horizon <- pp_horizon + days((8 - wday(pp_horizon, week_start = 1)) %% 7)
+
 #read shorts from allocator
 shorts <- read_csv(
   paste(
@@ -40,7 +41,8 @@ shorts_by_month <- shorts %>%
     .groups = "drop"
   ) %>%
   mutate(
-    build_date = month - months(1),
+    build_date = month - months(1), #build it the month before
+    build_date = build_date + days((8 - wday(build_date, week_start = 1)) %% 7), #first monday of the month
     build_date = pmax(build_date, pp_horizon + weeks(1))
   )
 
