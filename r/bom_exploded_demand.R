@@ -91,7 +91,7 @@ latest_file <- list.files(folder, pattern = "\\.xlsx$", full.names = TRUE) %>%
 # read the latest file
 inv <- read_excel(latest_file, skip = 1, col_types = "text") %>%
   clean_names() %>%
-  filter(qa_status %in% c("A", "eComm-A", "AWP", "QWP", "QAP")) %>%
+  filter(qa_status %in% c("A", "eComm-A", "AWP", "QWP", "QAP", "QW1")) %>%
   rename(part = name) %>%
   mutate(available = parse_number(quantity)) %>% #using quantity, which is lot number
   group_by(part) %>%

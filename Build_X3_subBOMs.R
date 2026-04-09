@@ -8,6 +8,20 @@
 
 #step 1: identify roots -- basically any processing step, regardless of label
 
+#re-read production plan, do not filter for qty > 0 (allow qty = 0) because
+#we need to allow for the termination of a bom at a node that is a seprate step,
+#but that doesn't have any volume.
+
+production_plan <- read_csv(
+  paste(
+    "C:/Users/alex.moore/OneDrive - Canopy Growth Corporation/Documents/Working Folder/supply_model",
+    "Production Plan.csv",
+    sep = "/"
+  )
+)
+
+
+
 terminal_parts <- production_plan %>% filter(
   plan_date == max(plan_date)
 ) %>%

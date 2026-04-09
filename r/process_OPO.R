@@ -15,7 +15,7 @@ MRP_parts <- MRP %>% pull(part) %>% unique()
 
 OPO <- OPO_raw %>%
   mutate(
-    remaining_to_be_received = parse_number(remaining_to_be_received),
+    remaining_to_be_received = parse_number(remaining_to_be_received_stu),
     exp_receipt_date = str_replace_all(exp_receipt_date, "[^0-9]", "") %>% mdy(),
     revised_commit_date = str_replace_all(revised_commit_date, "[^0-9]", "") %>% na_if("") |> mdy(),
     arrival_date = coalesce(revised_commit_date, exp_receipt_date),

@@ -66,14 +66,3 @@ exploded_bom <- indented_bom %>%
   ungroup() %>%
   select(-group)
 
-
-
-#are there any duplicate combinations of top_level_assembly - part?
-
-test <- exploded_bom %>%
-  group_by(top_level_assembly, indented_part, part, assembly) %>%
-  summarise(
-    n=n()
-  )
-
-dups <- test %>% filter(n>1)

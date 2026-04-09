@@ -16,7 +16,64 @@ production_plan <- read_csv(
     "Production Plan.csv",
     sep = "/"
   )
+) %>%
+  filter(quantity > 0)
+
+
+#validate PP - ensure there is *exactly* 1x FG-labelled item for each SKU
+production_plan_check <- production_plan %>%
+  filter(
+    str_detect(item, "10\\d{4}|20\\d{4}")
+  ) %>%
+  mutate(
+    parts_clean = str_replace(item, "-UL", "")
+  ) %>%
+  select(parts_clean, process, prod_class) %>%
+  distinct() %>%
+  group_by(parts_clean, prod_class) %>%
+  summarise(
+    n = n(), #this is the number of unique production steps per label
+    .groups = "drop"
+  ) %>%
+  pivot_wider(
+    values_from = n,
+    names_from = prod_class,
+    values_fill =  0
+  )
+
+missing_prod_step <- production_plan_check %>%
+  filter(FG == 0) %>%
+  select(parts_clean) %>%
+  distinct() %>%
+  pull(parts_clean)
+
+multiple_prod_steps <- production_plan_check %>%
+  filter(FG > 1) %>%
+  select(parts_clean) %>%
+  distinct() %>%
+  pull(parts_clean)
+
+#Print output for copy pasting **need to wrap in a warning**
+cat(
+  str_flatten(
+    c(
+      "** PRODUCTION PLAN WARNINGS **",
+      "--> The following items are missing a 'FG'-labelled production step:",
+      missing_prod_step,
+      "--> The following items have multipe 'FG'-labelled production steps:",
+      if (length(multiple_prod_steps)>0) multiple_prod_steps else "nil"
+    ),
+    collapse = '\n'
+  )
 )
+
+
+unique_parts <- production_plan_check %>% 
+  select(parts_clean) %>% 
+  distinct() %>%
+  pull(parts_clean)
+
+
 
 pp_horizon <- max(production_plan$date)
 pp_horizon <- pp_horizon + days((8 - wday(pp_horizon, week_start = 1)) %% 7)

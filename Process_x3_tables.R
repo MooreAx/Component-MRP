@@ -1,6 +1,5 @@
 #data from snowflake
 
-
 #ITEM MASTER
 x3ITMMASTER <- read_csv(
   "data/ITMMASTER.csv",
@@ -257,4 +256,4 @@ x3BOMD_clean <- x3BOMD %>%
 
 
 #remove the main tables ... too big
-#rm(x3BOM, x3BOMD, x3ITMMASTER)
+rm(x3BOM, x3BOMD, x3ITMMASTER)
